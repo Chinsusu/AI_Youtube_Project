@@ -23,3 +23,6 @@ node_modules/
 # Local WebDrivers (not tracked)
 drivers/
 drivers/*.exe
+
+# Local browser profiles (per-session)
+profiles/

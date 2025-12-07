@@ -16,6 +16,7 @@ from pathlib import Path
 import subprocess
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
+import time
 
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -29,10 +30,31 @@ from webdriver_manager.microsoft import EdgeChromiumDriverManager
 class YouTubeController:
     def __init__(self) -> None:
         self.driver: Optional[webdriver.Chrome] = None
+        self._proxy: Optional[str] = None
+        self._profile_dir: Optional[str] = None
+        # Error-recovery state
+        self._last_check_ts: float = 0.0
+        self._last_reload_ts: float = 0.0
+        self._last_video_time: Optional[float] = None
+        self._last_video_time_ts: float = 0.0
+        self._reload_backoff_s: float = 10.0
+        self._reload_backoff_max_s: float = 300.0
 
-    def start(self) -> None:
+    def start(self, proxy: Optional[str] = None, profile_dir: Optional[str] = None) -> None:
         if self.driver:
             return
+        # Normalize proxy
+        def norm_proxy(p: Optional[str]) -> Optional[str]:
+            if not p:
+                return None
+            p = p.strip()
+            if not p:
+                return None
+            if "://" not in p:
+                p = "http://" + p
+            return p
+        self._proxy = norm_proxy(proxy)
+        self._profile_dir = profile_dir.strip() if isinstance(profile_dir, str) else None
         # Project root and drivers folder
         repo_root = Path(__file__).resolve().parent.parent
         drivers_dir = repo_root / "drivers"
@@ -85,6 +107,14 @@ class YouTubeController:
             ], env_name="CHROME_BINARY")
             if chrome_binary:
                 c_opts.binary_location = chrome_binary
+            if self._proxy:
+                c_opts.add_argument(f"--proxy-server={self._proxy}")
+            if self._profile_dir:
+                try:
+                    os.makedirs(self._profile_dir, exist_ok=True)
+                except Exception:
+                    pass
+                c_opts.add_argument(f"--user-data-dir={self._profile_dir}")
 
             chromedriver_path = find_driver(["chromedriver.exe", "chromedriver"])
             if chromedriver_path:
@@ -116,6 +146,14 @@ class YouTubeController:
                     e_opts.binary_location = edge_binary
                 except Exception:
                     pass
+            if self._proxy:
+                e_opts.add_argument(f"--proxy-server={self._proxy}")
+            if self._profile_dir:
+                try:
+                    os.makedirs(self._profile_dir, exist_ok=True)
+                except Exception:
+                    pass
+                e_opts.add_argument(f"--user-data-dir={self._profile_dir}")
 
             edgedriver_path = find_driver(["msedgedriver.exe", "msedgedriver"])
             if edgedriver_path:
@@ -143,9 +181,29 @@ class YouTubeController:
             self.driver.quit()
             self.driver = None
 
-    def open(self, url: str) -> None:
+    def open(self, url: str, proxy: Optional[str] = None, profile_dir: Optional[str] = None) -> None:
+        # Restart with new proxy/profile if needed
+        def norm_proxy(p: Optional[str]) -> Optional[str]:
+            if not p:
+                return None
+            p = p.strip()
+            if not p:
+                return None
+            if "://" not in p:
+                p = "http://" + p
+            return p
+        desired = norm_proxy(proxy)
+        desired_profile = profile_dir.strip() if isinstance(profile_dir, str) else None
         if not self.driver:
-            self.start()
+            self.start(proxy=desired, profile_dir=desired_profile)
+        else:
+            if (desired != self._proxy) or (desired_profile != self._profile_dir):
+                # restart driver to apply changes
+                try:
+                    self.stop()
+                except Exception:
+                    pass
+                self.start(proxy=desired, profile_dir=desired_profile)
         assert self.driver
         # Add autoplay/mute hints when opening YouTube watch URLs
         from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
@@ -231,3 +289,78 @@ class YouTubeController:
             return title.strip()
         except Exception:
             return ""
+
+    def error_recover_tick(self) -> None:
+        """
+        Detect common YouTube error overlays and attempt controlled reloads with backoff.
+        Also detects stuck playback (no currentTime progress for a while when not paused).
+        Safe to call frequently; throttles internally.
+        """
+        if not self.driver:
+            return
+        now = time.monotonic()
+        if now - self._last_check_ts < 1.0:
+            return
+        self._last_check_ts = now
+
+        try:
+            state = self.driver.execute_script(
+                """
+                var v=document.querySelector('video');
+                var hasErr=!!(document.querySelector('.ytp-error, .ytp-error-content-wrap, ytd-player-error-message-renderer'));
+                var txt='';
+                if(hasErr){
+                   try{ txt=(document.querySelector('.ytp-error-content-wrap')?.innerText||''); }catch(e){}
+                }
+                return {
+                  hasErr: hasErr,
+                  t: v? v.currentTime : null,
+                  paused: v? v.paused : null,
+                  rs: v? v.readyState : 0,
+                  errText: txt
+                };
+                """
+            )
+        except Exception:
+            return
+
+        should_reload = False
+        if isinstance(state, dict):
+            has_err = bool(state.get('hasErr'))
+            t = state.get('t')
+            paused = state.get('paused')
+            rs = int(state.get('rs') or 0)
+
+            if has_err:
+                should_reload = True
+            else:
+                # Detect stuck playback: no progress for 20s while supposed to be playing
+                try:
+                    t_f = float(t) if t is not None else None
+                except Exception:
+                    t_f = None
+                if t_f is not None:
+                    if self._last_video_time is None:
+                        self._last_video_time = t_f
+                        self._last_video_time_ts = now
+                    else:
+                        progressed = (t_f > self._last_video_time + 0.01)
+                        if progressed:
+                            # Reset backoff on progress
+                            self._last_video_time = t_f
+                            self._last_video_time_ts = now
+                            if now - self._last_reload_ts > 15:
+                                self._reload_backoff_s = 10.0
+                        else:
+                            # No progress; if not paused and data should be available, consider stuck
+                            if (paused is False) and (rs >= 2) and (now - self._last_video_time_ts > 20):
+                                should_reload = True
+
+        if should_reload:
+            if now - self._last_reload_ts >= self._reload_backoff_s:
+                try:
+                    self.driver.refresh()
+                    self._last_reload_ts = now
+                    self._reload_backoff_s = min(self._reload_backoff_s * 2.0, self._reload_backoff_max_s)
+                except Exception:
+                    pass

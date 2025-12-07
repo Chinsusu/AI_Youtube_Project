@@ -20,6 +20,10 @@ from PyQt5.QtWidgets import (
 )
 
 from scripts.selenium_control import YouTubeController
+from pathlib import Path
+import uuid
+import re
+import json
 
 
 class SessionItemWidget(QWidget):
@@ -31,6 +35,12 @@ class SessionItemWidget(QWidget):
         self.url_edit = QLineEdit(self)
         self.url_edit.setPlaceholderText("YouTube URL...")
         self.url_edit.setText(url)
+        self.proxy_edit = QLineEdit(self)
+        self.proxy_edit.setPlaceholderText("proxy e.g. host:port or socks5://host:port")
+        self.proxy_edit.setFixedWidth(230)
+        self.profile_edit = QLineEdit(self)
+        self.profile_edit.setPlaceholderText("profile name (folder)")
+        self.profile_edit.setFixedWidth(150)
 
         self.open_btn = QPushButton("Open", self)
         self.toggle_btn = QPushButton("Play", self)
@@ -44,6 +54,8 @@ class SessionItemWidget(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(6, 3, 6, 3)
         row.addWidget(self.url_edit, stretch=1)
+        row.addWidget(self.proxy_edit)
+        row.addWidget(self.profile_edit)
         row.addWidget(self.open_btn)
         row.addWidget(self.toggle_btn)
         row.addWidget(self.next_btn)
@@ -73,7 +85,17 @@ class SessionItemWidget(QWidget):
         self.ensure_ctrl()
         assert self.ctrl is not None
         try:
-            self.ctrl.open(url)
+            proxy = self.proxy_edit.text().strip() or None
+            # Resolve profile directory (base: profiles/<safe-name>)
+            name = (self.profile_edit.text() or '').strip()
+            if not name:
+                name = f"profile-{uuid.uuid4().hex[:8]}"
+                self.profile_edit.setText(name)
+            safe = re.sub(r'[^A-Za-z0-9._-]+', '_', name)
+            base = Path(__file__).resolve().parent.parent / 'profiles'
+            base.mkdir(exist_ok=True)
+            profile_dir = str(base / safe)
+            self.ctrl.open(url, proxy=proxy, profile_dir=profile_dir)
             self.title_timer.start()
             self.refresh_title()
             self.update_toggle_text()
@@ -159,6 +181,8 @@ class MainWindow(QMainWindow):
         self.url_input = QLineEdit(self)
         self.url_input.setPlaceholderText("Enter YouTube URL...")
         self.import_btn = QPushButton("Import List", self)
+        self.save_btn = QPushButton("Save Sessions", self)
+        self.load_btn = QPushButton("Load Sessions", self)
         self.open_btn = QPushButton("Open", self)
         self.global_skip_cb = QCheckBox("Auto-skip ads (default)", self)
         self.global_skip_cb.setChecked(True)
@@ -170,6 +194,8 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         top.addWidget(self.url_input, stretch=1)
         top.addWidget(self.import_btn)
+        top.addWidget(self.save_btn)
+        top.addWidget(self.load_btn)
         top.addWidget(self.open_btn)
         top.addWidget(self.global_skip_cb)
         top.addWidget(self.threads_label)
@@ -198,6 +224,8 @@ class MainWindow(QMainWindow):
 
         # Wiring
         self.import_btn.clicked.connect(self.import_list)
+        self.save_btn.clicked.connect(self.save_sessions)
+        self.load_btn.clicked.connect(self.load_sessions)
         self.open_btn.clicked.connect(self.open_from_input)
         self.sessions.currentRowChanged.connect(lambda _row: self.update_progress())
 
@@ -314,6 +342,55 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.progress_label.setText(f"Đang phát: {title}   {pos}/{total}")
+
+    # Save/Load sessions (URL, proxy, profile) to JSON
+    def save_sessions(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Save Sessions", "sessions.json", "JSON Files (*.json);;All Files (*)")
+        if not path:
+            return
+        data = []
+        for i in range(self.sessions.count()):
+            item = self.sessions.item(i)
+            if not item:
+                continue
+            w = self.sessions.itemWidget(item)
+            if not isinstance(w, SessionItemWidget):
+                continue
+            data.append({
+                'url': w.url_edit.text().strip(),
+                'proxy': w.proxy_edit.text().strip(),
+                'profile': w.profile_edit.text().strip(),
+            })
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'sessions': data}, f, ensure_ascii=False, indent=2)
+            self.status_label.setText(f"Saved {len(data)} sessions to {path}")
+        except Exception as e:
+            self.status_label.setText(f"Save failed: {e}")
+
+    def load_sessions(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Load Sessions", "", "JSON Files (*.json);;All Files (*)")
+        if not path:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                obj = json.load(f)
+            items = obj.get('sessions') or []
+            added = 0
+            for s in items:
+                url = (s.get('url') or '').strip()
+                proxy = (s.get('proxy') or '').strip()
+                profile = (s.get('profile') or '').strip()
+                w = self._add_session_widget(url)
+                if proxy:
+                    w.proxy_edit.setText(proxy)
+                if profile:
+                    w.profile_edit.setText(profile)
+                added += 1
+            self.status_label.setText(f"Loaded {added} sessions from {path}")
+            self.update_progress()
+        except Exception as e:
+            self.status_label.setText(f"Load failed: {e}")
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         # Cleanly stop all sessions
