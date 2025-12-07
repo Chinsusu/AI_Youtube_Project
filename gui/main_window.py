@@ -53,13 +53,19 @@ class MainWindow(QMainWindow):
         # Status label
         self.status_label = QLabel("Ready")
         self.status_label.setAlignment(Qt.AlignLeft)
+        self.progress_label = QLabel("0/0")
+        self.progress_label.setAlignment(Qt.AlignRight)
 
         # Layout
         root = QWidget(self)
         layout = QVBoxLayout(root)
         layout.addLayout(controls)
         layout.addWidget(self.list_widget, stretch=1)
-        layout.addWidget(self.status_label)
+        info = QHBoxLayout()
+        info.addWidget(self.status_label)
+        info.addStretch(1)
+        info.addWidget(self.progress_label)
+        layout.addLayout(info)
         self.setCentralWidget(root)
 
         # Connections
@@ -81,6 +87,7 @@ class MainWindow(QMainWindow):
         # Shuffle play order state
         self.play_order: list[int] = []
         self.play_pos: int = -1
+        self._update_progress()
 
     def import_list(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open URL List", "", "Text Files (*.txt);;All Files (*)")
@@ -93,6 +100,7 @@ class MainWindow(QMainWindow):
                     if url and not url.startswith("#"):
                         self.list_widget.addItem(url)
             self._rebuild_shuffle_order()
+            self._update_progress()
             self.status_label.setText(f"Loaded and shuffled list from {path}")
         except Exception as e:
             self.status_label.setText(f"Load failed: {e}")
@@ -126,6 +134,7 @@ class MainWindow(QMainWindow):
                         self.play_pos = idx_in_order
                     except Exception:
                         pass
+            self._update_progress()
             self.status_label.setText("Opened in browser")
         except Exception as e:
             self.status_label.setText(f"Open failed: {e}")
@@ -148,6 +157,7 @@ class MainWindow(QMainWindow):
                     self.play_pos = idx_in_order
                 except Exception:
                     pass
+            self._update_progress()
             self.status_label.setText(f"Opened: {url}")
         except Exception as e:
             self.status_label.setText(f"Open failed: {e}")
@@ -194,6 +204,19 @@ class MainWindow(QMainWindow):
 
         random.shuffle(self.play_order)
         self.play_pos = -1
+        self._update_progress()
+
+    def _update_progress(self) -> None:
+        try:
+            total = len(self.play_order)
+            if total <= 0:
+                self.progress_label.setText("0/0")
+                return
+            pos = self.play_pos + 1 if 0 <= self.play_pos < total else 0
+            self.progress_label.setText(f"{pos}/{total}")
+        except Exception:
+            # Keep previous text on any error
+            pass
 
     def play_video(self) -> None:
         try:
@@ -239,6 +262,7 @@ class MainWindow(QMainWindow):
                 return
             self.ctrl.open(url)
             self._mark_opened_row(row)
+            self._update_progress()
             self.status_label.setText(f"Opened: {url}")
         except Exception as e:
             self.status_label.setText(f"Next failed: {e}")
