@@ -136,6 +136,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("AI YouTube Controller (PyQt5 + Selenium)")
         self.resize(1000, 640)
+        # Keep strong references to row widgets to avoid Python GC breaking signals
+        self._session_widgets: List[SessionItemWidget] = []
 
         # Top controls
         self.url_input = QLineEdit(self)
@@ -197,6 +199,8 @@ class MainWindow(QMainWindow):
         it.setSizeHint(w.sizeHint())
         self.sessions.addItem(it)
         self.sessions.setItemWidget(it, w)
+        # Keep a Python reference so signals/slots remain alive
+        self._session_widgets.append(w)
         return w
 
     def _selected_widget(self) -> Optional[SessionItemWidget]:
@@ -277,13 +281,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         # Cleanly stop all sessions
         try:
-            for i in range(self.sessions.count()):
-                item = self.sessions.item(i)
-                if not item:
-                    continue
-                w = self.sessions.itemWidget(item)
-                if isinstance(w, SessionItemWidget):
+            for w in self._session_widgets:
+                try:
                     w.stop()
+                except Exception:
+                    pass
         except Exception:
             pass
         super().closeEvent(event)
@@ -298,4 +300,3 @@ def run_app(auto_close_ms: int | None = None) -> None:
     if auto_close_ms and auto_close_ms > 0:
         QTimer.singleShot(auto_close_ms, app.quit)  # type: ignore[name-defined]
     sys.exit(app.exec_())
-
