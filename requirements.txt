@@ -1,0 +1,9 @@
+torch>=2.0
+torchvision>=0.15
+torchaudio>=2.0
+opencv-python
+pyqt5
+pyqtwebengine
+selenium
+webdriver-manager
+requests

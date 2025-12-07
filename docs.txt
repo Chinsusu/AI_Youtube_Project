@@ -1,0 +1,16 @@
+# AI YouTube Project Documentation
+
+## Introduction
+This project aims to build an AI system using Python that can watch and interact with YouTube videos. The AI will use computer vision to analyze videos and can be controlled via a GUI. 
+
+## Libraries and Tools
+- **TensorFlow**: For deep learning and AI model building.
+- **PyTorch**: Alternative to TensorFlow for neural networks.
+- **OpenCV**: For video processing and computer vision.
+- **Selenium**: For automating web browser tasks like controlling YouTube video playback.
+- **Tkinter** or **PyQt5**: For building a GUI for interaction with the AI.
+
+## Features
+- Video automation using Selenium.
+- AI video analysis using TensorFlow or PyTorch.
+- GUI to control video playback and display AI insights.

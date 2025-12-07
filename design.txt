@@ -1,0 +1,9 @@
+# Design Overview
+
+## GUI
+- **Main Screen**: Displays the current video playing from YouTube, with play/pause and next video controls.
+- **Video Player**: Shows video playback, along with AI insights on the current video.
+- **AI Information Display**: Shows predictions or analysis from the AI model on the video content.
+
+## AI Model
+The AI model will analyze video frames, detecting objects or actions. This will be achieved through deep learning models like TensorFlow or PyTorch.

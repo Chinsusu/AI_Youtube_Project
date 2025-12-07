@@ -1,0 +1,23 @@
+# Coding Standards for the AI YouTube Project
+
+## Python Code Style
+- Follow PEP8 guidelines for writing Python code.
+- Variable names: snake_case (e.g., video_url, frame_data).
+- Function names: snake_case (e.g., train_model()).
+- Class names: CamelCase (e.g., VideoProcessor).
+
+## Dependency Management
+- Use `virtualenv` or `conda` for environment management.
+- Store project dependencies in `requirements.txt`.
+
+## Directory Structure
+```
+/project-folder
+    /assets          # Media assets (videos, images)
+    /gui             # GUI code (Tkinter or PyQt)
+    /models          # AI models and training code
+    /scripts         # Automation scripts (Selenium, requests)
+    requirements.txt # Project dependencies
+    main.py          # Main script to run the app
+    README.md        # Project documentation
+```

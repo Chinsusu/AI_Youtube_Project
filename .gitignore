@@ -1,0 +1,22 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Editor/OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Node/npm leftovers (if any)
+node_modules/
+
