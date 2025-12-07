@@ -52,13 +52,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host '==> Installing remaining dependencies (batch)...'
-& $venvPy -m pip install opencv-python pyqt5 pyqtwebengine selenium webdriver-manager requests -U
+& $venvPy -m pip install pyqt5 selenium webdriver-manager requests -U
 if ($LASTEXITCODE -ne 0) {
     Write-Warning 'Batch install failed. Retrying critical packages individually...'
     & $venvPy -m pip install pyqt5 -U; if ($LASTEXITCODE -ne 0) { Write-Warning 'pyqt5 install failed.' }
-    & $venvPy -m pip install pyqtwebengine -U; if ($LASTEXITCODE -ne 0) { Write-Warning 'pyqtwebengine install failed.' }
     & $venvPy -m pip install selenium webdriver-manager requests -U; if ($LASTEXITCODE -ne 0) { Write-Warning 'selenium/webdriver-manager/requests install failed.' }
-    # opencv is optional for this smoke test; skip if it fails
 }
 
 Write-Host '==> Warming up model (downloads weights on first run)...'

@@ -24,6 +24,8 @@ class YouTubeController:
             return
         options = Options()
         options.add_argument("--start-maximized")
+        # Improve autoplay reliability; disable gesture requirement
+        options.add_argument("--autoplay-policy=no-user-gesture-required")
         # Headless can break video controls; prefer visible browser by default.
         self.driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
 
@@ -36,6 +38,18 @@ class YouTubeController:
         if not self.driver:
             self.start()
         assert self.driver
+        # Add autoplay/mute hints when opening YouTube watch URLs
+        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+
+        try:
+            p = urlparse(url)
+            if p.netloc.endswith("youtube.com") and p.path.startswith("/watch"):
+                q = dict(parse_qsl(p.query))
+                q.setdefault("autoplay", "1")
+                q.setdefault("mute", "1")
+                url = urlunparse((p.scheme, p.netloc, p.path, p.params, urlencode(q), p.fragment))
+        except Exception:
+            pass
         self.driver.get(url)
 
     def play(self) -> None:
@@ -52,3 +66,25 @@ class YouTubeController:
             return
         self.driver.execute_script(script)
 
+    def exec_js(self, script: str) -> None:
+        self._exec_js(script)
+
+    def skip_ads_tick(self) -> None:
+        """Try to skip/accelerate ads; safe to call periodically."""
+        js = (
+            "(function(){\n"
+            "  try {\n"
+            "    var close=document.querySelector('.ytp-ad-overlay-close-button'); if(close){close.click();}\n"
+            "    var skip=document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button'); if(skip){skip.click();}\n"
+            "    var player=document.querySelector('.html5-video-player');\n"
+            "    var v=document.querySelector('video');\n"
+            "    if(player && player.classList && player.classList.contains('ad-showing') && v){\n"
+            "      try{ v.muted=true; }catch(e){}\n"
+            "      try{ v.playbackRate = 16.0; }catch(e){}\n"
+            "    } else if(v){\n"
+            "      if(v.playbackRate && v.playbackRate>1.1){ try{ v.playbackRate = 1.0; }catch(e){} }\n"
+            "    }\n"
+            "  } catch(e){}\n"
+            "})();"
+        )
+        self._exec_js(js)
