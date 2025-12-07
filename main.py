@@ -1,5 +1,8 @@
 import argparse
-from gui.main_window import run_app
+try:
+    from gui.multi_window import run_app  # new multi-session GUI
+except Exception:
+    from gui.main_window import run_app   # fallback to previous GUI
 
 
 if __name__ == "__main__":
