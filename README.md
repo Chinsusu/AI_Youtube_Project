@@ -14,9 +14,8 @@ This app provides a desktop GUI to open and control YouTube playback in a real b
    - `pip install -r requirements.txt`
 2. Run the app:
    - `python main.py`
-3. Paste a YouTube URL and click `Add` or `Open`.
-   - Use `Import List` to load URLs from a `.txt` file (one per line).
-   - Select an item in the list and click `Open` to launch the browser and load the link.
+3. Paste a YouTube URL and click `Open` to launch the browser immediately.
+   - Use `Import List` to load URLs from a `.txt` file (one per line). You can select a list item and click `Open` as well.
    - Use `Play/Pause/Next` to control playback in the opened browser. Use `Auto-skip ads` to automatically skip or accelerate ads.
 
 Notes:

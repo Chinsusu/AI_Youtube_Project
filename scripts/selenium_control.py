@@ -10,9 +10,17 @@ from __future__ import annotations
 from typing import Optional
 
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import os
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException
+
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
+
+from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.edge.service import Service as EdgeService
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 
 class YouTubeController:
@@ -22,12 +30,38 @@ class YouTubeController:
     def start(self) -> None:
         if self.driver:
             return
-        options = Options()
-        options.add_argument("--start-maximized")
-        # Improve autoplay reliability; disable gesture requirement
-        options.add_argument("--autoplay-policy=no-user-gesture-required")
-        # Headless can break video controls; prefer visible browser by default.
-        self.driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+        # Try Chrome first (supports overrides via env vars)
+        try:
+            c_opts = ChromeOptions()
+            c_opts.add_argument("--start-maximized")
+            c_opts.add_argument("--autoplay-policy=no-user-gesture-required")
+            chrome_binary = os.getenv("CHROME_BINARY")
+            if chrome_binary:
+                c_opts.binary_location = chrome_binary
+            chromedriver_path = os.getenv("CHROMEDRIVER") or os.getenv("WEBDRIVER_CHROME")
+            if chromedriver_path and os.path.exists(chromedriver_path):
+                c_service = ChromeService(chromedriver_path)
+            else:
+                c_service = ChromeService(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=c_service, options=c_opts)
+            return
+        except WebDriverException:
+            # Fallback to Edge if Chrome is not available
+            e_opts = EdgeOptions()
+            e_opts.add_argument("--start-maximized")
+            e_opts.add_argument("--autoplay-policy=no-user-gesture-required")
+            edge_binary = os.getenv("EDGE_BINARY")
+            if edge_binary:
+                try:
+                    e_opts.binary_location = edge_binary
+                except Exception:
+                    pass
+            edgedriver_path = os.getenv("EDGEDRIVER") or os.getenv("WEBDRIVER_EDGE")
+            if edgedriver_path and os.path.exists(edgedriver_path):
+                e_service = EdgeService(edgedriver_path)
+            else:
+                e_service = EdgeService(EdgeChromiumDriverManager().install())
+            self.driver = webdriver.Edge(service=e_service, options=e_opts)
 
     def stop(self) -> None:
         if self.driver:

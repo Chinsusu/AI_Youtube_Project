@@ -29,7 +29,6 @@ class MainWindow(QMainWindow):
         # Controls
         self.url_input = QLineEdit(self)
         self.url_input.setPlaceholderText("Enter YouTube URL...")
-        self.add_btn = QPushButton("Add")
         self.import_btn = QPushButton("Import List")
         self.open_btn = QPushButton("Open")
         self.play_btn = QPushButton("Play")
@@ -40,7 +39,6 @@ class MainWindow(QMainWindow):
 
         controls = QHBoxLayout()
         controls.addWidget(self.url_input)
-        controls.addWidget(self.add_btn)
         controls.addWidget(self.import_btn)
         controls.addWidget(self.open_btn)
         controls.addWidget(self.play_btn)
@@ -64,7 +62,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         # Connections
-        self.add_btn.clicked.connect(self.add_url)
         self.import_btn.clicked.connect(self.import_list)
         self.open_btn.clicked.connect(self.open_current)
         self.play_btn.clicked.connect(self.play_video)
@@ -79,13 +76,6 @@ class MainWindow(QMainWindow):
         if self.auto_skip_cb.isChecked():
             self.ad_timer.start()
         self.auto_skip_cb.toggled.connect(self._on_auto_skip_toggled)
-
-    def add_url(self) -> None:
-        url = self.url_input.text().strip()
-        if not url:
-            return
-        self.list_widget.addItem(url)
-        self.url_input.clear()
 
     def import_list(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open URL List", "", "Text Files (*.txt);;All Files (*)")
@@ -102,11 +92,14 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"Load failed: {e}")
 
     def _current_url(self) -> Optional[str]:
+        # Prefer manual input; fall back to selected list item
+        text = self.url_input.text().strip()
+        if text:
+            return text
         item = self.list_widget.currentItem()
         if item is not None:
             return item.text().strip()
-        text = self.url_input.text().strip()
-        return text or None
+        return None
 
     def open_current(self) -> None:
         url = self._current_url()
