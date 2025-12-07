@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
         # Status label
         self.status_label = QLabel("Ready")
         self.status_label.setAlignment(Qt.AlignLeft)
-        self.progress_label = QLabel("0/0")
+        self.progress_label = QLabel("Đang phát: -   0/0")
         self.progress_label.setAlignment(Qt.AlignRight)
 
         # Layout
@@ -88,6 +88,12 @@ class MainWindow(QMainWindow):
         self.play_order: list[int] = []
         self.play_pos: int = -1
         self._update_progress()
+
+        # Periodically refresh progress (including dynamic title changes)
+        self.title_timer = QTimer(self)
+        self.title_timer.setInterval(1500)
+        self.title_timer.timeout.connect(self._update_progress)
+        self.title_timer.start()
 
     def import_list(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open URL List", "", "Text Files (*.txt);;All Files (*)")
@@ -210,10 +216,20 @@ class MainWindow(QMainWindow):
         try:
             total = len(self.play_order)
             if total <= 0:
-                self.progress_label.setText("0/0")
+                self.progress_label.setText("Đang phát: -   0/0")
                 return
             pos = self.play_pos + 1 if 0 <= self.play_pos < total else 0
-            self.progress_label.setText(f"{pos}/{total}")
+            # Get current title from Selenium if available
+            title = ""
+            try:
+                title = self.ctrl.get_title().strip()
+            except Exception:
+                title = ""
+            if not title:
+                # Fallback to current selected item's text
+                it = self.list_widget.currentItem()
+                title = (it.text().strip() if it else "-") or "-"
+            self.progress_label.setText(f"Đang phát: {title}   {pos}/{total}")
         except Exception:
             # Keep previous text on any error
             pass

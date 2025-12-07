@@ -197,3 +197,17 @@ class YouTubeController:
             "})();"
         )
         self._exec_js(js)
+
+    def get_title(self) -> str:
+        """Return current tab title; strip common suffixes (e.g., ' - YouTube')."""
+        if not self.driver:
+            return ""
+        try:
+            title = self.driver.title or ""
+            for suf in (" - YouTube", " - YouTube Music"):
+                if title.endswith(suf):
+                    title = title[: -len(suf)]
+                    break
+            return title.strip()
+        except Exception:
+            return ""
