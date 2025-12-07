@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Callable, Tuple
+from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -23,11 +23,9 @@ from scripts.selenium_control import YouTubeController
 
 
 class SessionItemWidget(QWidget):
-    def __init__(self, url: str = "", default_skip: bool = True, parent: Optional[QWidget] = None,
-                 capacity_check: Optional[Callable[[], Tuple[bool, str]]] = None) -> None:
+    def __init__(self, url: str = "", default_skip: bool = True, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.ctrl: Optional[YouTubeController] = None
-        self._capacity_check = capacity_check
         self._is_playing_cache: bool = False
 
         self.url_edit = QLineEdit(self)
@@ -72,11 +70,6 @@ class SessionItemWidget(QWidget):
         url = self.url_edit.text().strip()
         if not url:
             return
-        if self._capacity_check is not None:
-            allow, msg = self._capacity_check()
-            if not allow:
-                self.title_label.setText(msg or "Capacity reached")
-                return
         self.ensure_ctrl()
         assert self.ctrl is not None
         try:
@@ -216,7 +209,7 @@ class MainWindow(QMainWindow):
 
     # Helpers
     def _add_session_widget(self, url: str = "") -> SessionItemWidget:
-        w = SessionItemWidget(url=url, default_skip=self.global_skip_cb.isChecked(), capacity_check=self._can_open_more)
+        w = SessionItemWidget(url=url, default_skip=self.global_skip_cb.isChecked())
         it = QListWidgetItem(self.sessions)
         it.setSizeHint(w.sizeHint())
         self.sessions.addItem(it)
@@ -225,20 +218,6 @@ class MainWindow(QMainWindow):
         self._session_widgets.append(w)
         return w
 
-    def _can_open_more(self) -> Tuple[bool, str]:
-        active = 0
-        try:
-            for w in self._session_widgets:
-                if w.ctrl is not None:
-                    active += 1
-        except Exception:
-            pass
-        limit = int(self.threads_spin.value())
-        allow = active < limit
-        msg = "" if allow else f"Limit reached {active}/{limit}"
-        if not allow:
-            self.status_label.setText(msg)
-        return allow, msg
 
     def _selected_widget(self) -> Optional[SessionItemWidget]:
         row = self.sessions.currentRow()
@@ -270,22 +249,36 @@ class MainWindow(QMainWindow):
         self.update_progress()
 
     def open_from_input(self) -> None:
+        threads = int(self.threads_spin.value())
         url = self.url_input.text().strip()
-        if not url:
-            # Try open selected row instead
-            w = self._selected_widget()
-            if w:
+        opened = 0
+        if url:
+            # Open N new sessions with the same URL
+            for _ in range(threads):
+                w = self._add_session_widget(url)
+                self.sessions.setCurrentRow(self.sessions.count() - 1)
                 w.open()
-                self.status_label.setText("Opened selected")
-            else:
-                self.status_label.setText("No URL provided")
+                opened += 1
+            self.url_input.clear()
+            self.status_label.setText(f"Opened {opened} new session(s)")
             self.update_progress()
             return
-        w = self._add_session_widget(url)
-        self.sessions.setCurrentRow(self.sessions.count() - 1)
-        w.open()
-        self.url_input.clear()
-        self.status_label.setText("Opened new session")
+
+        # No URL typed: open up to N unopened existing sessions (rows without driver)
+        for i in range(self.sessions.count()):
+            if opened >= threads:
+                break
+            item = self.sessions.item(i)
+            if not item:
+                continue
+            w = self.sessions.itemWidget(item)
+            if not isinstance(w, SessionItemWidget):
+                continue
+            if w.ctrl is None:
+                self.sessions.setCurrentRow(i)
+                w.open()
+                opened += 1
+        self.status_label.setText(f"Opened {opened} existing session(s)")
         self.update_progress()
 
     def _tick_all_ads(self) -> None:
