@@ -11,6 +11,8 @@ from typing import Optional
 
 from selenium import webdriver
 import os
+import shutil
+from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
 
@@ -30,38 +32,98 @@ class YouTubeController:
     def start(self) -> None:
         if self.driver:
             return
-        # Try Chrome first (supports overrides via env vars)
+        # Project root and drivers folder
+        repo_root = Path(__file__).resolve().parent.parent
+        drivers_dir = repo_root / "drivers"
+
+        def find_driver(names: list[str]) -> str | None:
+            # 1) Env overrides
+            for env_name in ("CHROMEDRIVER", "WEBDRIVER_CHROME", "EDGEDRIVER", "WEBDRIVER_EDGE"):
+                p = os.getenv(env_name)
+                if p and os.path.exists(p):
+                    return p
+            # 2) drivers/ folder
+            for n in names:
+                p = drivers_dir / n
+                if p.exists():
+                    return str(p)
+            # 3) PATH
+            for n in names:
+                p = shutil.which(n)
+                if p:
+                    return p
+            return None
+
+        def find_binary(candidates: list[str], env_name: str | None = None) -> str | None:
+            if env_name:
+                p = os.getenv(env_name)
+                if p and os.path.exists(p):
+                    return p
+            for p in candidates:
+                if os.path.exists(p):
+                    return p
+            return None
+
+        # Try Chrome first (supports overrides via env vars and local drivers)
+        chrome_error: Exception | None = None
+        edge_error: Exception | None = None
         try:
             c_opts = ChromeOptions()
             c_opts.add_argument("--start-maximized")
             c_opts.add_argument("--autoplay-policy=no-user-gesture-required")
-            chrome_binary = os.getenv("CHROME_BINARY")
+            chrome_binary = find_binary([
+                os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+                os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+                os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+            ], env_name="CHROME_BINARY")
             if chrome_binary:
                 c_opts.binary_location = chrome_binary
-            chromedriver_path = os.getenv("CHROMEDRIVER") or os.getenv("WEBDRIVER_CHROME")
-            if chromedriver_path and os.path.exists(chromedriver_path):
+
+            chromedriver_path = find_driver(["chromedriver.exe", "chromedriver"])
+            if chromedriver_path:
                 c_service = ChromeService(chromedriver_path)
             else:
+                # Fallback to online manager (requires internet)
                 c_service = ChromeService(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=c_service, options=c_opts)
             return
-        except WebDriverException:
+        except Exception as e:
+            chrome_error = e
             # Fallback to Edge if Chrome is not available
             e_opts = EdgeOptions()
             e_opts.add_argument("--start-maximized")
             e_opts.add_argument("--autoplay-policy=no-user-gesture-required")
-            edge_binary = os.getenv("EDGE_BINARY")
+            edge_binary = find_binary([
+                os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+                os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+                os.path.expandvars(r"%LocalAppData%\Microsoft\Edge\Application\msedge.exe"),
+            ], env_name="EDGE_BINARY")
             if edge_binary:
                 try:
                     e_opts.binary_location = edge_binary
                 except Exception:
                     pass
-            edgedriver_path = os.getenv("EDGEDRIVER") or os.getenv("WEBDRIVER_EDGE")
-            if edgedriver_path and os.path.exists(edgedriver_path):
+
+            edgedriver_path = find_driver(["msedgedriver.exe", "msedgedriver"])
+            if edgedriver_path:
                 e_service = EdgeService(edgedriver_path)
             else:
+                # Fallback to online manager (requires internet)
                 e_service = EdgeService(EdgeChromiumDriverManager().install())
-            self.driver = webdriver.Edge(service=e_service, options=e_opts)
+            try:
+                self.driver = webdriver.Edge(service=e_service, options=e_opts)
+                return
+            except Exception as e2:
+                edge_error = e2
+                # Both failed; synthesize helpful message
+                hints = (
+                    "No local WebDriver found and online download failed. "
+                    "Fix by either: (1) placing 'chromedriver.exe' or 'msedgedriver.exe' in the 'drivers/' folder, "
+                    "(2) setting CHROMEDRIVER/EDGEDRIVER env vars to local driver paths, or "
+                    "(3) enabling internet to let webdriver-manager fetch drivers."
+                )
+                details = f"ChromeErr={type(chrome_error).__name__}: {chrome_error}; EdgeErr={type(edge_error).__name__}: {edge_error}"
+                raise RuntimeError(f"Selenium startup failed. {hints} Details: {details}")
 
     def stop(self) -> None:
         if self.driver:

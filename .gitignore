@@ -20,3 +20,6 @@ __pycache__/
 # Node/npm leftovers (if any)
 node_modules/
 
+# Local WebDrivers (not tracked)
+drivers/
+drivers/*.exe
