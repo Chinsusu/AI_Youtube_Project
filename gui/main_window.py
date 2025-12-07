@@ -78,6 +78,10 @@ class MainWindow(QMainWindow):
             self.ad_timer.start()
         self.auto_skip_cb.toggled.connect(self._on_auto_skip_toggled)
 
+        # Shuffle play order state
+        self.play_order: list[int] = []
+        self.play_pos: int = -1
+
     def import_list(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open URL List", "", "Text Files (*.txt);;All Files (*)")
         if not path:
@@ -88,7 +92,8 @@ class MainWindow(QMainWindow):
                     url = line.strip()
                     if url and not url.startswith("#"):
                         self.list_widget.addItem(url)
-            self.status_label.setText(f"Loaded list from {path}")
+            self._rebuild_shuffle_order()
+            self.status_label.setText(f"Loaded and shuffled list from {path}")
         except Exception as e:
             self.status_label.setText(f"Load failed: {e}")
 
@@ -115,6 +120,12 @@ class MainWindow(QMainWindow):
                 item = self.list_widget.item(row)
                 if item and item.text().strip() == url:
                     self._mark_opened_row(row)
+                    # Align play pointer to this row if present in the shuffled order
+                    try:
+                        idx_in_order = self.play_order.index(row)
+                        self.play_pos = idx_in_order
+                    except Exception:
+                        pass
             self.status_label.setText("Opened in browser")
         except Exception as e:
             self.status_label.setText(f"Open failed: {e}")
@@ -131,6 +142,12 @@ class MainWindow(QMainWindow):
             row = self.list_widget.currentRow()
             if row >= 0:
                 self._mark_opened_row(row)
+                # Align play pointer to this row if present in the shuffled order
+                try:
+                    idx_in_order = self.play_order.index(row)
+                    self.play_pos = idx_in_order
+                except Exception:
+                    pass
             self.status_label.setText(f"Opened: {url}")
         except Exception as e:
             self.status_label.setText(f"Open failed: {e}")
@@ -151,18 +168,32 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _random_unopened_row(self) -> int:
-        count = self.list_widget.count()
-        unopened = []
-        for i in range(count):
+    def _rebuild_shuffle_order(self) -> None:
+        # Clear opened marks and rebuild a shuffled play order
+        try:
+            from PyQt5.QtGui import QColor
+            default_color = QColor('#000000')
+        except Exception:
+            default_color = None  # type: ignore
+
+        self.play_order = []
+        for i in range(self.list_widget.count()):
             it = self.list_widget.item(i)
             if not it:
                 continue
-            if not bool(it.data(Qt.UserRole)) and it.text().strip():
-                unopened.append(i)
-        if not unopened:
-            return -1
-        return random.choice(unopened)
+            # Reset opened state and color
+            it.setData(Qt.UserRole, False)
+            try:
+                if default_color is not None:
+                    it.setForeground(default_color)
+            except Exception:
+                pass
+            url = it.text().strip()
+            if url:
+                self.play_order.append(i)
+
+        random.shuffle(self.play_order)
+        self.play_pos = -1
 
     def play_video(self) -> None:
         try:
@@ -183,12 +214,22 @@ class MainWindow(QMainWindow):
             if self.list_widget.count() == 0:
                 self.status_label.setText("List is empty")
                 return
-            idx = self._random_unopened_row()
-            if idx < 0:
-                self.status_label.setText("All items already opened")
-                return
-            self.list_widget.setCurrentRow(idx)
-            it = self.list_widget.item(idx)
+            # Ensure we have a valid shuffled order
+            if not self.play_order or any(i >= self.list_widget.count() for i in self.play_order):
+                self._rebuild_shuffle_order()
+
+            # Advance pointer; reshuffle and loop when reaching the end
+            self.play_pos += 1
+            if self.play_pos >= len(self.play_order):
+                self._rebuild_shuffle_order()
+                if not self.play_order:
+                    self.status_label.setText("No valid URLs to play")
+                    return
+                self.play_pos = 0
+
+            row = self.play_order[self.play_pos]
+            self.list_widget.setCurrentRow(row)
+            it = self.list_widget.item(row)
             if not it:
                 self.status_label.setText("No valid item")
                 return
@@ -197,8 +238,8 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Empty URL at selected item")
                 return
             self.ctrl.open(url)
-            self._mark_opened_row(idx)
-            self.status_label.setText(f"Opened next (random): {url}")
+            self._mark_opened_row(row)
+            self.status_label.setText(f"Opened: {url}")
         except Exception as e:
             self.status_label.setText(f"Next failed: {e}")
 
