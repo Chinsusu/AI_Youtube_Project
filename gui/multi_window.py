@@ -132,12 +132,19 @@ class SessionItemWidget(QWidget):
         except Exception:
             pass
 
-    def tick_ads(self) -> None:
-        if self.ctrl and self.skip_cb.isChecked():
+    def tick_maintenance(self) -> None:
+        if self.ctrl:
+            # Error detection + recovery (throttled internally)
             try:
-                self.ctrl.skip_ads_tick()
+                self.ctrl.error_recover_tick()
             except Exception:
                 pass
+            # Ad skipping if enabled
+            if self.skip_cb.isChecked():
+                try:
+                    self.ctrl.skip_ads_tick()
+                except Exception:
+                    pass
 
 
 class MainWindow(QMainWindow):
@@ -291,7 +298,7 @@ class MainWindow(QMainWindow):
                 w = self.sessions.itemWidget(item)
                 if not isinstance(w, SessionItemWidget):
                     continue
-                w.tick_ads()
+                w.tick_maintenance()
         except Exception:
             pass
 
