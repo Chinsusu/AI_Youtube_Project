@@ -128,8 +128,26 @@ class MainWindow(QMainWindow):
 
     def next_video(self) -> None:
         try:
-            self.ctrl.next()
-            self.status_label.setText("Next")
+            count = self.list_widget.count()
+            if count == 0:
+                self.status_label.setText("List is empty")
+                return
+            current = self.list_widget.currentRow()
+            next_index = 0 if current < 0 else current + 1
+            if next_index >= count:
+                self.status_label.setText("No next item in list")
+                return
+            item = self.list_widget.item(next_index)
+            if not item:
+                self.status_label.setText("No next item in list")
+                return
+            url = item.text().strip()
+            if not url:
+                self.status_label.setText("Empty URL at next item")
+                return
+            self.list_widget.setCurrentRow(next_index)
+            self.ctrl.open(url)
+            self.status_label.setText(f"Opened next: {url}")
         except Exception as e:
             self.status_label.setText(f"Next failed: {e}")
 

@@ -16,7 +16,7 @@ This app provides a desktop GUI to open and control YouTube playback in a real b
    - `python main.py`
 3. Paste a YouTube URL and click `Open` to launch the browser immediately.
    - Use `Import List` to load URLs from a `.txt` file (one per line). You can select a list item and click `Open` as well.
-   - Use `Play/Pause/Next` to control playback in the opened browser. Use `Auto-skip ads` to automatically skip or accelerate ads.
+   - Use `Play/Pause` to control playback. `Next` will open the next URL in the ListView. Use `Auto-skip ads` to automatically skip or accelerate ads.
 
 Notes:
 - On first run, torchvision downloads pretrained weights (requires internet).
