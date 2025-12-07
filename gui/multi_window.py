@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Callable, Tuple
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QPushButton,
     QCheckBox,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
     QListWidget,
@@ -22,17 +23,19 @@ from scripts.selenium_control import YouTubeController
 
 
 class SessionItemWidget(QWidget):
-    def __init__(self, url: str = "", default_skip: bool = True, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, url: str = "", default_skip: bool = True, parent: Optional[QWidget] = None,
+                 capacity_check: Optional[Callable[[], Tuple[bool, str]]] = None) -> None:
         super().__init__(parent)
         self.ctrl: Optional[YouTubeController] = None
+        self._capacity_check = capacity_check
+        self._is_playing_cache: bool = False
 
         self.url_edit = QLineEdit(self)
         self.url_edit.setPlaceholderText("YouTube URL...")
         self.url_edit.setText(url)
 
         self.open_btn = QPushButton("Open", self)
-        self.play_btn = QPushButton("Play", self)
-        self.pause_btn = QPushButton("Pause", self)
+        self.toggle_btn = QPushButton("Play", self)
         self.next_btn = QPushButton("Next", self)
         self.close_btn = QPushButton("Close", self)
         self.skip_cb = QCheckBox("Skip ads", self)
@@ -44,16 +47,14 @@ class SessionItemWidget(QWidget):
         row.setContentsMargins(6, 3, 6, 3)
         row.addWidget(self.url_edit, stretch=1)
         row.addWidget(self.open_btn)
-        row.addWidget(self.play_btn)
-        row.addWidget(self.pause_btn)
+        row.addWidget(self.toggle_btn)
         row.addWidget(self.next_btn)
         row.addWidget(self.close_btn)
         row.addWidget(self.skip_cb)
         row.addWidget(self.title_label, stretch=1)
 
         self.open_btn.clicked.connect(self.open)
-        self.play_btn.clicked.connect(self.play)
-        self.pause_btn.clicked.connect(self.pause)
+        self.toggle_btn.clicked.connect(self.toggle_play_pause)
         self.next_btn.clicked.connect(self.next)
         self.close_btn.clicked.connect(self.stop)
 
@@ -71,28 +72,28 @@ class SessionItemWidget(QWidget):
         url = self.url_edit.text().strip()
         if not url:
             return
+        if self._capacity_check is not None:
+            allow, msg = self._capacity_check()
+            if not allow:
+                self.title_label.setText(msg or "Capacity reached")
+                return
         self.ensure_ctrl()
         assert self.ctrl is not None
         try:
             self.ctrl.open(url)
             self.title_timer.start()
             self.refresh_title()
+            self.update_toggle_text()
         except Exception as e:
             self.title_label.setText(f"Open failed: {e}")
 
-    def play(self) -> None:
+    def toggle_play_pause(self) -> None:
         if not self.ctrl:
             return
         try:
-            self.ctrl.play()
-        except Exception:
-            pass
-
-    def pause(self) -> None:
-        if not self.ctrl:
-            return
-        try:
-            self.ctrl.pause()
+            now_playing = self.ctrl.toggle_play_pause()
+            self._is_playing_cache = now_playing
+            self.update_toggle_text()
         except Exception:
             pass
 
@@ -120,6 +121,21 @@ class SessionItemWidget(QWidget):
         try:
             title = self.ctrl.get_title().strip() or "-"
             self.title_label.setText(title)
+            self.update_toggle_text()
+        except Exception:
+            pass
+
+    def update_toggle_text(self) -> None:
+        try:
+            if not self.ctrl:
+                self.toggle_btn.setText("Play")
+                return
+            # Prefer querying real state; fall back to cache
+            try:
+                self._is_playing_cache = self.ctrl.is_playing()
+            except Exception:
+                pass
+            self.toggle_btn.setText("Pause" if self._is_playing_cache else "Play")
         except Exception:
             pass
 
@@ -146,12 +162,18 @@ class MainWindow(QMainWindow):
         self.open_btn = QPushButton("Open", self)
         self.global_skip_cb = QCheckBox("Auto-skip ads (default)", self)
         self.global_skip_cb.setChecked(True)
+        self.threads_label = QLabel("Threads:", self)
+        self.threads_spin = QSpinBox(self)
+        self.threads_spin.setRange(1, 50)
+        self.threads_spin.setValue(2)
 
         top = QHBoxLayout()
         top.addWidget(self.url_input, stretch=1)
         top.addWidget(self.import_btn)
         top.addWidget(self.open_btn)
         top.addWidget(self.global_skip_cb)
+        top.addWidget(self.threads_label)
+        top.addWidget(self.threads_spin)
 
         # Sessions list
         self.sessions = QListWidget(self)
@@ -194,7 +216,7 @@ class MainWindow(QMainWindow):
 
     # Helpers
     def _add_session_widget(self, url: str = "") -> SessionItemWidget:
-        w = SessionItemWidget(url=url, default_skip=self.global_skip_cb.isChecked())
+        w = SessionItemWidget(url=url, default_skip=self.global_skip_cb.isChecked(), capacity_check=self._can_open_more)
         it = QListWidgetItem(self.sessions)
         it.setSizeHint(w.sizeHint())
         self.sessions.addItem(it)
@@ -202,6 +224,21 @@ class MainWindow(QMainWindow):
         # Keep a Python reference so signals/slots remain alive
         self._session_widgets.append(w)
         return w
+
+    def _can_open_more(self) -> Tuple[bool, str]:
+        active = 0
+        try:
+            for w in self._session_widgets:
+                if w.ctrl is not None:
+                    active += 1
+        except Exception:
+            pass
+        limit = int(self.threads_spin.value())
+        allow = active < limit
+        msg = "" if allow else f"Limit reached {active}/{limit}"
+        if not allow:
+            self.status_label.setText(msg)
+        return allow, msg
 
     def _selected_widget(self) -> Optional[SessionItemWidget]:
         row = self.sessions.currentRow()

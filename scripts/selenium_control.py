@@ -170,6 +170,26 @@ class YouTubeController:
     def next(self) -> None:
         self._exec_js("var b=document.querySelector('.ytp-next-button'); if(b){b.click()}")
 
+    def is_playing(self) -> bool:
+        if not self.driver:
+            return False
+        try:
+            return bool(self.driver.execute_script("var v=document.querySelector('video'); return v ? !v.paused : false;"))
+        except Exception:
+            return False
+
+    def toggle_play_pause(self) -> bool:
+        """Toggle playback. Returns True if now playing, False if paused."""
+        try:
+            if self.is_playing():
+                self.pause()
+                return False
+            else:
+                self.play()
+                return True
+        except Exception:
+            return False
+
     def _exec_js(self, script: str) -> None:
         if not self.driver:
             return
