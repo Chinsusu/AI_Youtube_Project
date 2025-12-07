@@ -13,6 +13,7 @@ from selenium import webdriver
 import os
 import shutil
 from pathlib import Path
+import subprocess
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
 
@@ -71,6 +72,12 @@ class YouTubeController:
             c_opts = ChromeOptions()
             c_opts.add_argument("--start-maximized")
             c_opts.add_argument("--autoplay-policy=no-user-gesture-required")
+            c_opts.add_argument("--log-level=3")
+            c_opts.add_argument("--disable-logging")
+            try:
+                c_opts.add_experimental_option("excludeSwitches", ["enable-logging"])
+            except Exception:
+                pass
             chrome_binary = find_binary([
                 os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
                 os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
@@ -81,10 +88,10 @@ class YouTubeController:
 
             chromedriver_path = find_driver(["chromedriver.exe", "chromedriver"])
             if chromedriver_path:
-                c_service = ChromeService(chromedriver_path)
+                c_service = ChromeService(chromedriver_path, log_output=subprocess.DEVNULL)
             else:
                 # Fallback to online manager (requires internet)
-                c_service = ChromeService(ChromeDriverManager().install())
+                c_service = ChromeService(ChromeDriverManager().install(), log_output=subprocess.DEVNULL)
             self.driver = webdriver.Chrome(service=c_service, options=c_opts)
             return
         except Exception as e:
@@ -93,6 +100,12 @@ class YouTubeController:
             e_opts = EdgeOptions()
             e_opts.add_argument("--start-maximized")
             e_opts.add_argument("--autoplay-policy=no-user-gesture-required")
+            e_opts.add_argument("--log-level=3")
+            e_opts.add_argument("--disable-logging")
+            try:
+                e_opts.add_experimental_option("excludeSwitches", ["enable-logging"])
+            except Exception:
+                pass
             edge_binary = find_binary([
                 os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
                 os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
@@ -106,10 +119,10 @@ class YouTubeController:
 
             edgedriver_path = find_driver(["msedgedriver.exe", "msedgedriver"])
             if edgedriver_path:
-                e_service = EdgeService(edgedriver_path)
+                e_service = EdgeService(edgedriver_path, log_output=subprocess.DEVNULL)
             else:
                 # Fallback to online manager (requires internet)
-                e_service = EdgeService(EdgeChromiumDriverManager().install())
+                e_service = EdgeService(EdgeChromiumDriverManager().install(), log_output=subprocess.DEVNULL)
             try:
                 self.driver = webdriver.Edge(service=e_service, options=e_opts)
                 return
