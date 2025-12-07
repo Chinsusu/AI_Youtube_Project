@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 from scripts.selenium_control import YouTubeController
+import random
 
 
 class MainWindow(QMainWindow):
@@ -67,7 +68,7 @@ class MainWindow(QMainWindow):
         self.play_btn.clicked.connect(self.play_video)
         self.pause_btn.clicked.connect(self.pause_video)
         self.next_btn.clicked.connect(self.next_video)
-        self.list_widget.itemDoubleClicked.connect(lambda _: self.open_current())
+        self.list_widget.itemDoubleClicked.connect(self._open_item)
 
         # Auto-skip ads tick
         self.ad_timer = QTimer(self)
@@ -108,9 +109,60 @@ class MainWindow(QMainWindow):
             return
         try:
             self.ctrl.open(url)
+            # Mark opened if current list item matches the opened URL
+            row = self.list_widget.currentRow()
+            if row >= 0:
+                item = self.list_widget.item(row)
+                if item and item.text().strip() == url:
+                    self._mark_opened_row(row)
             self.status_label.setText("Opened in browser")
         except Exception as e:
             self.status_label.setText(f"Open failed: {e}")
+
+    def _open_item(self, item) -> None:
+        try:
+            url = item.text().strip()
+            if not url:
+                self.status_label.setText("Empty item URL")
+                return
+            self.list_widget.setCurrentItem(item)
+            self.ctrl.open(url)
+            # Mark as opened
+            row = self.list_widget.currentRow()
+            if row >= 0:
+                self._mark_opened_row(row)
+            self.status_label.setText(f"Opened: {url}")
+        except Exception as e:
+            self.status_label.setText(f"Open failed: {e}")
+
+    def _mark_opened_row(self, row: int) -> None:
+        try:
+            item = self.list_widget.item(row)
+            if not item:
+                return
+            item.setData(Qt.UserRole, True)
+            # Optional visual hint: dim opened entries
+            try:
+                from PyQt5.QtGui import QColor
+
+                item.setForeground(QColor('#888888'))
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _random_unopened_row(self) -> int:
+        count = self.list_widget.count()
+        unopened = []
+        for i in range(count):
+            it = self.list_widget.item(i)
+            if not it:
+                continue
+            if not bool(it.data(Qt.UserRole)) and it.text().strip():
+                unopened.append(i)
+        if not unopened:
+            return -1
+        return random.choice(unopened)
 
     def play_video(self) -> None:
         try:
@@ -128,26 +180,25 @@ class MainWindow(QMainWindow):
 
     def next_video(self) -> None:
         try:
-            count = self.list_widget.count()
-            if count == 0:
+            if self.list_widget.count() == 0:
                 self.status_label.setText("List is empty")
                 return
-            current = self.list_widget.currentRow()
-            next_index = 0 if current < 0 else current + 1
-            if next_index >= count:
-                self.status_label.setText("No next item in list")
+            idx = self._random_unopened_row()
+            if idx < 0:
+                self.status_label.setText("All items already opened")
                 return
-            item = self.list_widget.item(next_index)
-            if not item:
-                self.status_label.setText("No next item in list")
+            self.list_widget.setCurrentRow(idx)
+            it = self.list_widget.item(idx)
+            if not it:
+                self.status_label.setText("No valid item")
                 return
-            url = item.text().strip()
+            url = it.text().strip()
             if not url:
-                self.status_label.setText("Empty URL at next item")
+                self.status_label.setText("Empty URL at selected item")
                 return
-            self.list_widget.setCurrentRow(next_index)
             self.ctrl.open(url)
-            self.status_label.setText(f"Opened next: {url}")
+            self._mark_opened_row(idx)
+            self.status_label.setText(f"Opened next (random): {url}")
         except Exception as e:
             self.status_label.setText(f"Next failed: {e}")
 
